@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "experience-keeper entry frontmatter",
+  "description": "经验条目 frontmatter 契约，一条一个 Markdown 文件，五端共用同一份。校验实现在 experience_lib.validate_entry，写入前由 experience.py add 强制校验。",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "title",
+    "category",
+    "type",
+    "kind",
+    "scope",
+    "precondition",
+    "tags",
+    "action",
+    "evidence",
+    "confidence",
+    "verification",
+    "created_at",
+    "verified_at",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "enum": ["pitfall", "tooling", "workflow", "decision", "prompt", "domain"]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["path", "tool-rule", "antipattern", "recovery", "completion", "constraint"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["original", "reference"]
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["global", "project"]
+    },
+    "project": {
+      "type": ["string", "null"]
+    },
+    "action": {
+      "type": "string"
+    },
+    "source_of_truth": {
+      "type": ["string", "null"]
+    },
+    "precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "description": "经验适用的文件或目录：按路径召回时用，避免无关场景被无脑检索。",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scene": {
+          "type": "string"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["sessions", "counters", "sources"],
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "counters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "lines"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "avg_tool_calls": {
+          "type": ["integer", "number"]
+        },
+        "avg_tokens": {
+          "type": ["integer", "number"]
+        }
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "verification": {
+      "type": "string",
+      "enum": ["confirmed", "preference", "n/a"]
+    },
+    "verification_note": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 10
+    },
+    "verified_at": {
+      "type": "string",
+      "minLength": 10
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "outdated", "superseded", "deprecated"]
+    },
+    "supersedes": {
+      "type": ["string", "null"]
+    },
+    "related": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hit_count": {
+      "description": "被 search 命中并展示的次数，只在检索路径上递增；机械可观测。存量条目缺该字段时，旧 use_count 按召回次数读。",
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_hit_at": {
+      "description": "最近一次被 search 召回的时间；从未召回为 null。",
+      "type": ["string", "null"]
+    },
+    "use_count": {
+      "description": "被 use 命令上报「按这条执行过」的次数，agent 自报；它证明有人声称执行过，不等于结论正确且有效。缺 hit_count 的存量条目该字段是召回口径，按 0 采纳读。",
+      "type": "integer",
+      "minimum": 0
+    },
+    "use_failed_count": {
+      "description": "上报中 result=failed 的次数：按条目做了但没解决。失败也算执行过，但要和 use_count 一起看。",
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_used_at": {
+      "description": "最近一次被 use 上报采纳的时间；从未上报为 null。",
+      "type": ["string", "null"]
+    },
+    "last_use_result": {
+      "description": "最近一次采纳的现场结论：ok 生效、failed 未解决。",
+      "type": ["string", "null"]
+    },
+    "last_use_note": {
+      "description": "最近一次采纳时 agent 写的一句话现场补充。",
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "score": {
+      "type": ["integer", "number"]
+    }
+  }
+}

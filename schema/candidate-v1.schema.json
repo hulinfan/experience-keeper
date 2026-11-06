@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "experience-keeper candidate",
+  "description": "候选记录契约，一行一轮，由 experience_hook.py 落盘。校验实现在 experience_lib.validate_candidate，支持的关键字限于本文件用到的那些。",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ts",
+    "client",
+    "session_id",
+    "turn_id",
+    "project_name",
+    "cwd",
+    "compaction_count",
+    "signal",
+    "user",
+    "assistant",
+    "tools",
+    "outcome",
+    "cost",
+    "evidence"
+  ],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "minLength": 10
+    },
+    "client": {
+      "type": "string",
+      "enum": ["claude", "codex", "dsh", "codemaker", "pi", "manual"]
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "turn_id": {
+      "type": "string"
+    },
+    "project_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "compaction_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "signal": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "error_recovered",
+          "retry",
+          "retry_loop",
+          "user_correction",
+          "user_override",
+          "multi_source",
+          "slow",
+          "failure",
+          "agent_note",
+          "dep_fix",
+          "asset_script",
+          "asset_diagram",
+          "env_recovery",
+          "blast_radius_guard",
+          "evidence_capture",
+          "env_hazard",
+          "fallback_switch",
+          "decision_reversed",
+          "review_rejected",
+          "root_cause_mapped",
+          "counterintuitive",
+          "dep_matrix",
+          "asset_recipe",
+          "asset_query",
+          "probe_discipline",
+          "prereq_discovered",
+          "no_convergence",
+          "idempotency_mismatch",
+          "convergence_delay",
+          "qa_reflex",
+          "perf_limit",
+          "soft_limit",
+          "cost_decision",
+          "nonfunctional_floor",
+          "cost_trap",
+          "batch_mutation",
+          "silent_failure_suspected",
+          "offload_matrix",
+          "diagnostic_hazard",
+          "protocol_edge",
+          "state_machine_stuck",
+          "grounded_verdict",
+          "intent_repeat",
+          "artifact_churn"
+        ]
+      }
+    },
+    "user": {
+      "type": "string"
+    },
+    "prev_user": {
+      "type": "string"
+    },
+    "assistant": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "aborted", "incomplete"]
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["called", "ok", "error", "unknown", "denied"]
+          },
+          "error": {
+            "type": "string"
+          },
+          "error_text_hint": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "result": {
+            "description": "截断后的工具输出原文，判据型信号（实测数值、状态旧值、幂等差异）的取词面。",
+            "type": "string",
+            "maxLength": 1200
+          }
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "required": ["kind", "user_said", "agent_did"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "explicit_denial",
+            "restated_request",
+            "plan_rejected",
+            "permission_denied",
+            "manual_takeover",
+            "gave_answer"
+          ]
+        },
+        "signal": {
+          "type": "string"
+        },
+        "user_said": {
+          "type": "string"
+        },
+        "agent_did": {
+          "type": "string"
+        }
+      }
+    },
+    "reuse": {
+      "description": "本轮资产的可复用性。reusable 才可能转成条目，one_off 供复盘判断是否随结论一并丢弃。",
+      "type": "string",
+      "enum": ["reusable", "one_off"]
+    },
+    "carrier": {
+      "description": "本轮写盘落到的项目载体路径（规则、模板、知识库、调研文档）。有值时说明结论已进载体，复盘只需确认载体写全。",
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "description": "候选的复核优先级。pending 表示命中了误报率高的判据型信号，复盘时要排在最前逐条核实。",
+      "type": "string",
+      "enum": ["normal", "pending"]
+    },
+    "note": {
+      "description": "agent 自记备选的结构化字段，由 note 命令写入，add --from 时用于补齐条目前置条件与标签。",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "root_cause": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "precondition": {
+          "type": "object",
+          "properties": {
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "scene": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "required": ["tool_calls", "tokens", "duration_ms"],
+      "properties": {
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["path", "lines"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

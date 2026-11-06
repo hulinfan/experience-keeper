@@ -1,0 +1,8 @@
+{
+  "name": "experience-keeper-plugin",
+  "version": "1.0.0",
+  "description": "codemaker (OpenCode) adapter that forwards turn-end events to experience_hook.py",
+  "type": "module",
+  "main": "index.js",
+  "private": true
+}
