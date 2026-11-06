@@ -264,6 +264,19 @@ def index_section_current(text: str) -> bool:
     return replace_index_section(text).strip() == text.strip()
 
 
+def read_json_config(path: Path) -> dict:
+    """读客户端 JSON 配置。
+
+    Windows 上 PowerShell `Set-Content`/记事本常写出 UTF-8 BOM，带 BOM 时 `json.loads`
+    在第一个字符就失败，接线会被判成「配置坏了」。这里统一剥掉 BOM，非对象按空对象处理。
+    """
+    if not path.exists():
+        return {}
+    raw = path.read_text(encoding="utf-8").lstrip("\ufeff")
+    payload = json.loads(raw) if raw.strip() else {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def link_consumers(installer: Installer, announce: bool = True) -> None:
     """把五端的规则文件重建成指向全局规则的链接；未安装的端跳过。
 
@@ -325,7 +338,7 @@ def install_claude(installer: Installer) -> None:
     if not path.exists():
         print("  未发现配置，跳过")
         return
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json_config(path)
     hooks = payload.setdefault("hooks", {})
     command = hook_command("claude")
     changed = False
@@ -385,7 +398,7 @@ def install_codex(installer: Installer) -> None:
     command = hook_command("codex")
     hooks_path = HOME / ".codex" / "hooks.json"
     if hooks_path.exists():
-        payload = json.loads(hooks_path.read_text(encoding="utf-8"))
+        payload = read_json_config(hooks_path)
         if not isinstance(payload, dict):
             print("  警告：hooks.json 顶层不是对象，跳过")
             return
@@ -423,7 +436,7 @@ def install_pi(installer: Installer) -> None:
     print("pi：")
     path = HOME / ".pi" / "agent" / "settings.json"
     extension = (SKILL_DIR / "adapters" / "pi" / "experience-keeper.ts").as_posix()
-    payload = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    payload = read_json_config(path)
     status = upsert_path(payload.setdefault("extensions", []), extension)
     if status == "current":
         print("  扩展已就位，跳过")
@@ -466,7 +479,7 @@ def install_codemaker(installer: Installer) -> None:
     print("codemaker：")
     path = HOME / ".config" / "codemaker" / "codemaker.json"
     plugin = (SKILL_DIR / "adapters" / "codemaker").as_posix()
-    payload = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    payload = read_json_config(path)
     status = upsert_path(payload.setdefault("plugin", []), plugin)
     if status == "current":
         print("  插件已就位，跳过")
@@ -572,7 +585,7 @@ def check_wiring() -> list[tuple[str, bool, str]]:
 
 def _json_has_hook(text: str, event: str) -> bool:
     try:
-        payload = json.loads(text)
+        payload = json.loads(text.lstrip("\ufeff"))
     except ValueError:
         return False
     hooks = payload.get("hooks") or {}

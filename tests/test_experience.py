@@ -3880,6 +3880,19 @@ class InstallUpgradeTest(BaseCase):
             self.assertTrue(install.index_section_current(text))
             self.assertTrue((root / ".agents" / "experience").is_dir(), "经验库根目录也要建出来")
 
+    def test_bom_json_config_still_installs(self) -> None:
+        """Windows 的 PowerShell/记事本会写出 UTF-8 BOM：带 BOM 的配置不能被判成坏文件。"""
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            (root / ".claude").mkdir()
+            (root / ".claude" / "settings.json").write_text("\ufeff{}\n", encoding="utf-8")
+            with mock.patch.object(install, "HOME", root), redirect_stdout(io.StringIO()):
+                install.install_claude(install.Installer(apply=True))
+            payload = json.loads((root / ".claude" / "settings.json").read_text(encoding="utf-8").lstrip("\ufeff"))
+            commands = [item["hooks"][0]["command"] for item in payload["hooks"]["Stop"]]
+            self.assertIn(install.HOOK_SCRIPT.as_posix(), commands[0])
+            self.assertEqual(commands[0].count('"'), 2, "脚本路径要带引号，用户名带空格也能跑")
+
     def test_upsert_hook_appends_then_replaces(self) -> None:
         entries: list = []
         self.assertEqual(install.upsert_hook(entries, f"{self.OLD} --client claude"), "appended")
