@@ -40,15 +40,25 @@ flowchart LR
 
 ## 安装
 
+前提：Python 3.10+、git，且要接线的客户端已装好并至少启动过一次（各端配置目录存在才会接钩子）。
+
 ```bash
 git clone https://github.com/hulinfan/experience-keeper.git ~/.agents/skills/experience-keeper
 cd ~/.agents/skills/experience-keeper
-python scripts/install.py            # 预演：打印将要做的全部改动
-python scripts/install.py --apply    # 写入客户端配置（自动备份）
-python scripts/install.py --check    # 只做接线自检，缺项退出码 1
+python scripts/install.py --check    # 先看缺什么，不写任何文件
+python scripts/install.py --apply    # 写入接线（改动前自动备份）
+python scripts/install.py --check    # 复查：应输出「全部接线就绪。」
+python scripts/experience.py gate    # 首跑：应输出「无待复盘候选，不派发。」
 ```
 
-要求 Python 3.10+，无第三方运行时依赖（技能目录读取需要 PyYAML>=6.0）。
+`--apply` 一次性完成：全局规则 `~/.agents/AGENTS.md` 的「## 经验库」索引段（文件不存在会建）、
+五端规则文件链接、Claude Code / Codex 采集钩子、dsh 预设插件、pi 扩展与 codemaker 插件注册，
+并建出数据目录 `~/.agents/experience/`。客户端没装或配置缺失时跳过该端并继续，不会中断其余接线。
+
+只装其中一端：`python scripts/install.py --client codex --apply`。skill 必须放在 `~/.agents/skills/experience-keeper`
+且是实体目录（链接会让自检报「本脚本不在全局目录里运行」）。
+
+要求 Python 3.10+，无第三方运行时依赖；开发与测试另需 `pytest`、`PyYAML`。
 
 ## 常用命令
 

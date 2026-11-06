@@ -3858,6 +3858,28 @@ class InstallUpgradeTest(BaseCase):
     OLD = "python /home/user/service/skills/experience-keeper/scripts/experience_hook.py"
     NEW = "python /home/user/.agents/skills/experience-keeper/scripts/experience_hook.py"
 
+    def test_dsh_install_skips_without_preset_dir(self) -> None:
+        """全新机器没有 dsh 预设目录：跳过而不是抛 FileNotFoundError。"""
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            with mock.patch.object(install, "HOME", root), redirect_stdout(io.StringIO()):
+                install.install_dsh(install.Installer(apply=True))
+            self.assertFalse((root / ".dsh").exists(), "缺预设时不该凭空建目录")
+
+    def test_shared_creates_global_rules_when_missing(self) -> None:
+        """全新机器没有全局规则文件：建出来并写入索引段，否则客户端不会主动跑 gate。"""
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            target = root / ".agents" / "AGENTS.md"
+            with mock.patch.object(install, "HOME", root), \
+                    mock.patch.object(install, "AGENTS_GLOBAL", target), \
+                    redirect_stdout(io.StringIO()):
+                install.install_shared(install.Installer(apply=True))
+            text = target.read_text(encoding="utf-8")
+            self.assertIn("## 经验库", text)
+            self.assertTrue(install.index_section_current(text))
+            self.assertTrue((root / ".agents" / "experience").is_dir(), "经验库根目录也要建出来")
+
     def test_upsert_hook_appends_then_replaces(self) -> None:
         entries: list = []
         self.assertEqual(install.upsert_hook(entries, f"{self.OLD} --client claude"), "appended")

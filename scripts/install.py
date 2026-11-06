@@ -46,12 +46,15 @@ INDEX_SECTION = """
 - 登记表：用户问「经验库有哪些经验」「列出完整经验库」「查询经验召回情况」「查询经验复用情况」时跑 `python "$HOME/.agents/skills/experience-keeper/scripts/experience.py" library`，原样展示表格
 """
 
-CODEX_HOOK_BLOCK = f"""
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = "python {HOOK_SCRIPT.as_posix()} --client codex"
-"""
+def hook_command(client: str) -> str:
+    """钩子命令行。脚本路径加引号：用户名或安装目录带空格时，未加引号的命令会直接执行失败。"""
+    return f'python "{HOOK_SCRIPT.as_posix()}" --client {client}'
+
+
+CODEX_HOOK_BLOCK = (
+    "\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype = \"command\"\n"
+    f"command = {json.dumps(hook_command('codex'))}\n"
+)
 
 CLIENTS = ("claude", "codex", "pi", "dsh", "codemaker")
 
@@ -261,23 +264,28 @@ def index_section_current(text: str) -> bool:
     return replace_index_section(text).strip() == text.strip()
 
 
-def install_shared(installer: Installer) -> None:
-    print("共享层：")
-    ok, detail = skill_home_status()
-    print(f"  {'skill 目录就位' if ok else '警告'}：{detail}")
+def link_consumers(installer: Installer, announce: bool = True) -> None:
+    """把五端的规则文件重建成指向全局规则的链接；未安装的端跳过。
 
+    先跑客户端接线再跑一遍：全新机器上客户端目录可能是这一轮才被建出来的。
+    """
     for name, path in agents_consumers().items():
         if not path.parent.exists():
-            print(f"  {name} 未安装，跳过规则链接")
+            if announce:
+                print(f"  {name} 未安装，跳过规则链接")
             continue
         status = agents_link_status(path)
         if status == "linked":
-            print(f"  {name} 规则链接已就位，跳过")
+            if announce:
+                print(f"  {name} 规则链接已就位，跳过")
             continue
         installer.note(f"{name} 规则文件{STATUS_LABELS[status]}，重建为指向 {AGENTS_GLOBAL} 的链接")
         if installer.apply:
             print(f"  {relink_agents_file(installer, path)}")
 
+
+def ensure_global_rules(installer: Installer) -> None:
+    """就位全局规则文件里的「## 经验库」索引段；文件不存在就建出来。"""
     if AGENTS_GLOBAL.exists():
         text = AGENTS_GLOBAL.read_text(encoding="utf-8")
         if "## 经验库" not in text:
@@ -287,7 +295,28 @@ def install_shared(installer: Installer) -> None:
         else:
             installer.write_text(AGENTS_GLOBAL, replace_index_section(text), "更新索引段（旧版只认当前项目、且要求开场强制复盘）")
     else:
-        print(f"  警告：{AGENTS_GLOBAL} 不存在，跳过索引段")
+        # 全新机器上全局规则文件往往还不存在：没有索引段，客户端不会主动跑 gate，
+        # 采集与复盘就永远不启动。这里直接建出来，只写入经验库这一段。
+        installer.write_text(AGENTS_GLOBAL, INDEX_SECTION, "创建全局规则文件并写入索引段")
+
+
+def ensure_store(installer: Installer) -> None:
+    """经验库根目录：全新机器上先建出来，接线自检与首轮采集都依赖它存在且可写。"""
+    store = HOME / ".agents" / "experience"
+    if store.is_dir():
+        return
+    if installer.apply:
+        store.mkdir(parents=True, exist_ok=True)
+    installer.note(f"创建经验库目录 {store}")
+
+
+def install_shared(installer: Installer) -> None:
+    print("共享层：")
+    ok, detail = skill_home_status()
+    print(f"  {'skill 目录就位' if ok else '警告'}：{detail}")
+    ensure_global_rules(installer)
+    ensure_store(installer)
+    link_consumers(installer)
 
 
 def install_claude(installer: Installer) -> None:
@@ -298,7 +327,7 @@ def install_claude(installer: Installer) -> None:
         return
     payload = json.loads(path.read_text(encoding="utf-8"))
     hooks = payload.setdefault("hooks", {})
-    command = f"python {HOOK_SCRIPT.as_posix()} --client claude"
+    command = hook_command("claude")
     changed = False
     labels = {"appended": "追加", "replaced": "替换为当前脚本路径", "current": "已就位"}
 
@@ -353,7 +382,7 @@ def install_codex(installer: Installer) -> None:
     ——Codex 按 `[hooks.state]` 里的下标记录信任，改下标会让用户重新确认。
     """
     print("Codex：")
-    command = f"python {HOOK_SCRIPT.as_posix()} --client codex"
+    command = hook_command("codex")
     hooks_path = HOME / ".codex" / "hooks.json"
     if hooks_path.exists():
         payload = json.loads(hooks_path.read_text(encoding="utf-8"))
@@ -408,6 +437,10 @@ def install_dsh(installer: Installer) -> None:
     preset_dir = HOME / ".dsh" / ".agent-presets" / "liangshen"
     if not source.exists():
         print(f"  适配器尚未就绪：{source}")
+        return
+    if not preset_dir.is_dir():
+        # 预设目录属于客户端：不做猜测创建，否则会在没装 dsh 的机器上留下半个预设。
+        print(f"  未发现 dsh 预设目录，跳过：{preset_dir}")
         return
     target = preset_dir / "experience-keeper.mjs"
     if installer.apply:
@@ -484,15 +517,18 @@ def check_wiring() -> list[tuple[str, bool, str]]:
     claude_path = HOME / ".claude" / "settings.json"
     claude_text = _read_text(claude_path)
     claude_ok = HOOK_MARKER in claude_text and HOOK_SCRIPT.as_posix() in claude_text
-    results.append(("Claude Code 采集钩子", claude_ok, f"路径须为 {HOOK_SCRIPT.as_posix()}"))
+    results.append(("Claude Code 采集钩子", claude_ok, str(claude_path) if claude_ok else f"路径须为 {HOOK_SCRIPT.as_posix()}"))
     session_end_ok = claude_ok and _json_has_hook(claude_text, "SessionEnd")
-    results.append(("Claude Code 会话结束钩子", session_end_ok, "hooks.SessionEnd 未接线，退出标记只能靠哨兵"))
+    results.append(
+        ("Claude Code 会话结束钩子", session_end_ok, "已接线" if session_end_ok else "hooks.SessionEnd 未接线，退出标记只能靠哨兵")
+    )
 
     # Codex 0.156 起钩子在 hooks.json 里；config.toml 只对旧版本有效，两种落点都认。
     codex_hooks_path = HOME / ".codex" / "hooks.json"
-    codex_text = _read_text(codex_hooks_path if codex_hooks_path.exists() else HOME / ".codex" / "config.toml")
+    codex_landing = codex_hooks_path if codex_hooks_path.exists() else HOME / ".codex" / "config.toml"
+    codex_text = _read_text(codex_landing)
     codex_ok = HOOK_MARKER in codex_text and HOOK_SCRIPT.as_posix() in codex_text
-    results.append(("Codex 采集钩子", codex_ok, f"路径须为 {HOOK_SCRIPT.as_posix()}"))
+    results.append(("Codex 采集钩子", codex_ok, str(codex_landing) if codex_ok else f"路径须为 {HOOK_SCRIPT.as_posix()}"))
 
     preset_dir = HOME / ".dsh" / ".agent-presets" / "liangshen"
     presets = sorted(path.name for path in (HOME / ".dsh" / ".agent-presets").glob("*")) if (HOME / ".dsh" / ".agent-presets").is_dir() else []
@@ -516,12 +552,14 @@ def check_wiring() -> list[tuple[str, bool, str]]:
     )
 
     pi_settings = _read_text(HOME / ".pi" / "agent" / "settings.json")
-    pi_ok = (SKILL_DIR / "adapters" / "pi" / "experience-keeper.ts").as_posix() in pi_settings
-    results.append(("pi 扩展注册", pi_ok, "扩展路径须指向全局 skill 目录"))
+    pi_path = (SKILL_DIR / "adapters" / "pi" / "experience-keeper.ts").as_posix()
+    pi_ok = pi_path in pi_settings
+    results.append(("pi 扩展注册", pi_ok, pi_path if pi_ok else "扩展路径须指向全局 skill 目录"))
 
     codemaker_text = _read_text(HOME / ".config" / "codemaker" / "codemaker.json")
-    codemaker_ok = (SKILL_DIR / "adapters" / "codemaker").as_posix() in codemaker_text
-    results.append(("codemaker 插件注册", codemaker_ok, "插件路径须指向全局 skill 目录"))
+    codemaker_path = (SKILL_DIR / "adapters" / "codemaker").as_posix()
+    codemaker_ok = codemaker_path in codemaker_text
+    results.append(("codemaker 插件注册", codemaker_ok, codemaker_path if codemaker_ok else "插件路径须指向全局 skill 目录"))
 
     store = HOME / ".agents" / "experience"
     writable = store.exists() and os.access(store, os.W_OK)
@@ -579,10 +617,24 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_shared:
         install_shared(installer)
     targets = CLIENTS if args.client == "all" else (args.client,)
+    failed: list[str] = []
     for client in targets:
-        INSTALLERS[client](installer)
+        try:
+            INSTALLERS[client](installer)
+        except (OSError, ValueError, KeyError) as error:
+            # 全新机器上缺配置、缺目录、配置格式不对都很常见：一处失败不能拖垮其余四端，
+            # 但必须报出来，否则用户会以为全部装好了。
+            print(f"  失败：{type(error).__name__}: {error}")
+            failed.append(client)
+    if not args.skip_shared:
+        # 客户端目录可能是这一轮才建出来的（刚写进 settings.json / 插件注册），
+        # 再补一遍规则链接，避免「装完还要手动再跑一次」。
+        link_consumers(installer, announce=False)
     print()
     print(f"共 {len(installer.changes)} 项改动。" + ("" if args.apply else " 这是预演，确认后加 --apply。"))
+    if failed:
+        print(f"以下客户端接线失败，修好后重跑 --client <名称> --apply：{', '.join(failed)}")
+        return 1
     return 0
 
 
