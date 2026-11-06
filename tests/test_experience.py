@@ -3774,8 +3774,9 @@ class IndexSectionTest(BaseCase):
         updated = install.replace_index_section(text)
         self.assertIn("## 语言风格", updated)
         self.assertIn("## 行为规范", updated)
-        # 命令必须写成 "$HOME/..." 带引号的形式：PowerShell 不展开裸 ~，bash 能展开 $HOME。
-        self.assertIn('python "$HOME/.agents/skills/experience-keeper/scripts/experience.py" gate', updated)
+        # 命令写解析出的解释器绝对路径 + 带引号的脚本路径：Linux 上常常没有 python 命令，
+        # 路径带空格时也必须能执行。
+        self.assertIn(f'"{install.INTERPRETER}" "{install.EXPERIENCE_CLI.as_posix()}" gate', updated)
         self.assertIn("复盘闸门", updated)
         self.assertIn("按需加载", updated)
         self.assertNotIn("旧版开场强制复盘", updated)
@@ -3915,7 +3916,16 @@ class InstallUpgradeTest(BaseCase):
             payload = json.loads((root / ".claude" / "settings.json").read_text(encoding="utf-8").lstrip("\ufeff"))
             commands = [item["hooks"][0]["command"] for item in payload["hooks"]["Stop"]]
             self.assertIn(install.HOOK_SCRIPT.as_posix(), commands[0])
-            self.assertEqual(commands[0].count('"'), 2, "脚本路径要带引号，用户名带空格也能跑")
+            self.assertIn(install.INTERPRETER, commands[0], "解释器要按本机解析，不能写死 python")
+            self.assertEqual(commands[0].count('"'), 4, "解释器与脚本路径都要带引号，带空格也能跑")
+
+    def test_hook_command_uses_resolved_interpreter(self) -> None:
+        """钩子命令不能写死 `python`：Linux 上常见的是 python3。"""
+        command = install.hook_command("codex")
+        self.assertTrue(command.startswith('"'), command)
+        self.assertIn(f'"{install.HOOK_SCRIPT.as_posix()}" --client codex', command)
+        self.assertNotRegex(command, r"(?m)^python ")
+        self.assertEqual(install.INTERPRETER, install.resolved_interpreter())
 
     def test_check_passes_on_machine_without_clients(self) -> None:
         """全新空机器：没装任何客户端时自检不该报红，否则用户永远看不到「全部接线就绪」。"""

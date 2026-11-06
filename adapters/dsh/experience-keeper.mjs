@@ -25,8 +25,9 @@ export const name = 'experience-keeper'
 const HOOK_SCRIPT = process.env.EXPERIENCE_HOOK_SCRIPT
   ?? join(homedir(), '.agents', 'skills', 'experience-keeper', 'scripts', 'experience_hook.py')
 
-/** 解释器按需求固定为 `python`；Windows 与 POSIX 同名，特殊环境用 EXPERIENCE_PYTHON 覆盖。 */
-const PYTHON_BIN = process.env.EXPERIENCE_PYTHON ?? 'python'
+/** 解释器默认按平台取：POSIX 上常见的是 python3，很多发行版没有 python 命令；特殊环境用 EXPERIENCE_PYTHON 覆盖。 */
+const PYTHON_BIN =
+  process.env.EXPERIENCE_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
 
 /** 固定 5 秒超时：采集超时或失败都静默，绝不拖住客户端轮次结束。 */
 const HOOK_TIMEOUT_MS = 5000

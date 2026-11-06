@@ -84,6 +84,7 @@ $ python scripts/experience.py review
 | Windows 配置带 UTF-8 BOM | 已兼容（读配置时剥 BOM），不用手工改文件 |
 | 自检报 `[缺失] 索引段为当前版本` | `~/.agents/AGENTS.md` 里是旧版索引段；重跑 `install.py --apply` 会原地替换 |
 | 想换安装位置 | 整体搬到 `~/.agents/skills/experience-keeper` 后再跑一次 `--apply`，旧路径的钩子会被替换而不是追加 |
+| 换了 Python 或换机器 | 钩子与全局规则里写的是安装时解析出的解释器绝对路径，重跑 `install.py --apply` 覆盖即可 |
 
 ### 升级与卸载
 

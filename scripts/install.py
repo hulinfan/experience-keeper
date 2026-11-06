@@ -5,7 +5,10 @@ skill 真身就在全局目录 ~/.agents/skills/experience-keeper/，不建任�
 五端按各自的方式发现它。本脚本只做注册与索引段维护，不改写已有配置内容，
 每次修改前先备份；默认预演，加 --apply 才真正写入。
 
-    python install.py                 # 预演全部
+解释器按本机解析（Windows 用 python，POSIX 常见的是 python3），钩子与全局规则里
+写的是解析出的绝对路径；换 Python 或换机器后重跑一次 --apply 即可覆盖。
+
+    python install.py                 # 预演全部（POSIX 上用 python3）
     python install.py --apply         # 执行全部
     python install.py --client claude --apply
     python install.py --check         # 接线自检
@@ -29,26 +32,50 @@ import experience_lib as lib  # noqa: E402
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKILL_HOME = Path.home() / ".agents" / "skills" / "experience-keeper"
 HOOK_SCRIPT = SKILL_DIR / "scripts" / "experience_hook.py"
+EXPERIENCE_CLI = SKILL_DIR / "scripts" / "experience.py"
+SKILL_ENTRY = SKILL_DIR / "SKILL.md"
 HOME = Path.home()
 AGENTS_GLOBAL = HOME / ".agents" / "AGENTS.md"
+
+
+def resolved_interpreter() -> str:
+    """钩子与全局规则里使用的解释器。
+
+    写死 `python` 在不少 Linux 发行版上直接失败（只有 `python3`，没有 `python`），
+    钩子是静默执行的，失败只在数据里表现为「一条候选都没有」。优先用当前解释器的
+    绝对路径，取不到时按 python3 → python 顺序找 PATH。
+    """
+    candidates: list[str] = []
+    if sys.executable and Path(sys.executable).is_file():
+        candidates.append(sys.executable)
+    for name in ("python3", "python"):
+        found = shutil.which(name)
+        if found and found not in candidates:
+            candidates.append(found)
+    return candidates[0] if candidates else "python"
+
+
+# 全局规则与钩子都按本机解析出的解释器写绝对路径：换 Python 后重跑一次 --apply 覆盖。
+INTERPRETER = resolved_interpreter()
 
 # 钩子命令的识别标记：配置里带这个文件名就说明是经验采集钩子。
 HOOK_MARKER = "experience_hook.py"
 # Windows 上判断目录联接用的重解析点属性。
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
-INDEX_SECTION = """
+INDEX_SECTION = f"""
 ## 经验库
 
-- 复盘闸门：会话开场跑 `python "$HOME/.agents/skills/experience-keeper/scripts/experience.py" gate`；一次会话只复盘这一次，直到会话退出都不再复盘；它说派发就后台派复盘子 Agent（原样转发 brief），仅主 Agent 派发
+- 复盘闸门：会话开场跑 `"{INTERPRETER}" "{EXPERIENCE_CLI.as_posix()}" gate`；一次会话只复盘这一次，直到会话退出都不再复盘；它说派发就后台派复盘子 Agent（原样转发 brief），仅主 Agent 派发
 - 按需加载：不通读条目；接手任务、调工具前、报错或空结果后、交付前，按现场字样（报错原文、工具名、接口名、路径）`search` 召回，命中才读
-- 沉淀入口：用户说「沉淀一下」「记下来」时，读 `~/.agents/skills/experience-keeper/SKILL.md` 入库
-- 登记表：用户问「经验库有哪些经验」「列出完整经验库」「查询经验召回情况」「查询经验复用情况」时跑 `python "$HOME/.agents/skills/experience-keeper/scripts/experience.py" library`，原样展示表格
+- 沉淀入口：用户说「沉淀一下」「记下来」时，读 `{SKILL_ENTRY.as_posix()}` 入库
+- 登记表：用户问「经验库有哪些经验」「列出完整经验库」「查询经验召回情况」「查询经验复用情况」时跑 `"{INTERPRETER}" "{EXPERIENCE_CLI.as_posix()}" library`，原样展示表格
 """
 
+
 def hook_command(client: str) -> str:
-    """钩子命令行。脚本路径加引号：用户名或安装目录带空格时，未加引号的命令会直接执行失败。"""
-    return f'python "{HOOK_SCRIPT.as_posix()}" --client {client}'
+    """钩子命令行。两段路径都加引号：用户名或安装目录带空格时未加引号会直接执行失败。"""
+    return f'"{INTERPRETER}" "{HOOK_SCRIPT.as_posix()}" --client {client}'
 
 
 CODEX_HOOK_BLOCK = (
@@ -626,7 +653,7 @@ def run_check() -> int:
         print(f"  [{mark}] {name}  —— {detail}")
     print()
     if failures:
-        print(f"{failures} 项待修：跑 python {Path(__file__).name} --apply 补齐。")
+        print(f"{failures} 项待修：重跑 install.py --apply 补齐。")
         return 1
     print("全部接线就绪。")
     return 0
