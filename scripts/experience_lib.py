@@ -187,15 +187,28 @@ def read_meta(name: str) -> dict:
         return {}
 
 
+def canonical_root(value: str | os.PathLike) -> str:
+    """项目根的规范形式：符号链接与短名统一成真实路径。
+
+    macOS 的 /tmp 是指向 /private/tmp 的链接，Windows 临时目录可能带 8.3 短名；
+    同一目录的两种写法会被当成两个项目，候选与条目就分家了。
+    """
+    try:
+        return str(Path(value).resolve())
+    except (OSError, RuntimeError):
+        return str(value)
+
+
 def resolve_project_name(project_root: Path) -> str:
     """返回该项目的经验目录名。
 
     默认用项目根目录名；同名目录已被别的项目占用时用父目录名消歧，
     仍冲突则追加序号。META.json 里的 project_root 是唯一权威判据。
+    比较前先规范成真实路径：同一目录的链接写法与真实写法必须落到同一个项目。
     """
-    root = str(project_root)
-    base = project_root.name or "root"
-    parent = project_root.parent.name or ""
+    root = canonical_root(project_root)
+    base = Path(root).name or "root"
+    parent = Path(root).parent.name or ""
     candidates = [base]
     if parent:
         candidates.append(f"{parent}-{base}")
@@ -203,7 +216,7 @@ def resolve_project_name(project_root: Path) -> str:
         candidates.append(f"{parent}-{base}-{suffix}" if parent else f"{base}-{suffix}")
     for name in candidates:
         recorded = read_meta(name).get("project_root")
-        if recorded is None or recorded == root:
+        if recorded is None or canonical_root(str(recorded)) == root:
             return name
     raise RuntimeError(f"无法为项目 {root} 分配经验目录名")
 
@@ -215,7 +228,7 @@ def ensure_project(project_root: Path) -> str:
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "project_root": str(project_root),
+            "project_root": canonical_root(project_root),
             "project_name": name,
             "registered_at": now_iso(),
         }

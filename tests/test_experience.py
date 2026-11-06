@@ -118,7 +118,22 @@ class ProjectNameTest(BaseCase):
     def test_missing_meta_registers_on_first_use(self) -> None:
         name = lib.ensure_project(self.project)
         meta = json.loads((self.home / "projects" / name / "META.json").read_text(encoding="utf-8"))
-        self.assertEqual(meta["project_root"], str(self.project))
+        self.assertEqual(meta["project_root"], lib.canonical_root(self.project))
+
+    def test_symlinked_project_root_resolves_to_same_project(self) -> None:
+        """同一目录的链接写法与真实写法必须是同一个项目。
+
+        macOS 的 /tmp 指向 /private/tmp，CI 的临时目录会同时出现两种写法；不规范化就会
+        把候选和条目分到两个项目名下（work-demo 与 demo）。
+        """
+        real = Path(self.temp.name) / "real" / "demo"
+        real.mkdir(parents=True)
+        link = Path(self.temp.name) / "link"
+        try:
+            link.symlink_to(Path(self.temp.name) / "real", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前环境不允许创建符号链接")
+        self.assertEqual(lib.ensure_project(real), lib.ensure_project(link / "demo"))
 
 
 class SignalTest(BaseCase):
