@@ -3011,7 +3011,16 @@ class SentinelTest(BaseCase):
         try:
             self.assertTrue(exit_sentinel.wait_for_exit(child.pid, timeout_seconds=15, poll_seconds=0.1))
         finally:
-            child.wait(timeout=15)
+            child.wait(timeout=10)
+
+    def test_zombie_child_counts_as_exited(self) -> None:
+        """POSIX 上已退出但未回收的子进程是僵尸：`kill(pid, 0)` 仍成功，必须判为已退出。"""
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.2)"])
+        time.sleep(0.8)
+        try:
+            self.assertFalse(exit_sentinel.process_alive(child.pid), "僵尸进程不能算活着")
+        finally:
+            child.wait(timeout=10)
 
     def test_session_end_marker_is_idempotent(self) -> None:
         exit_sentinel.write_session_end("pi", "0123456789ab", "demo", str(self.project), "process_exit", 3)

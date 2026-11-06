@@ -180,6 +180,24 @@ def process_alive(pid: int) -> bool:
         return False
     if os.name == "nt":
         return _windows_process_alive(pid)
+    return _posix_process_alive(pid)
+
+
+def _posix_process_alive(pid: int) -> bool:
+    """POSIX 存活判定。
+
+    已退出但尚未被回收的子进程是僵尸：`os.kill(pid, 0)` 对它仍然成功，只按这一条判断
+    会把「已退出」当成「在跑」，`wait_for_exit` 会一直等到超时（Linux 上必现）。
+    能读 `/proc` 时看进程状态：Z/X 视为已退出；自己的子进程顺带回收，不留僵尸。
+    """
+    try:
+        reaped, _ = os.waitpid(pid, os.WNOHANG)
+        if reaped == pid:
+            return False
+    except ChildProcessError:
+        pass
+    except OSError:
+        pass
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -188,6 +206,13 @@ def process_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as stream:
+            fields = stream.read().rsplit(b")", 1)[-1].split()
+        if fields and fields[0] in (b"Z", b"X", b"x"):
+            return False
+    except OSError:
+        pass
     return True
 
 
