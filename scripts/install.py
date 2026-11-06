@@ -527,52 +527,75 @@ def check_wiring() -> list[tuple[str, bool, str]]:
         status = agents_link_status(path)
         results.append((f"{name} 全局规则链接", status == "linked", f"{STATUS_LABELS[status]} —— {path}"))
 
-    claude_path = HOME / ".claude" / "settings.json"
-    claude_text = _read_text(claude_path)
-    claude_ok = HOOK_MARKER in claude_text and HOOK_SCRIPT.as_posix() in claude_text
-    results.append(("Claude Code 采集钩子", claude_ok, str(claude_path) if claude_ok else f"路径须为 {HOOK_SCRIPT.as_posix()}"))
-    session_end_ok = claude_ok and _json_has_hook(claude_text, "SessionEnd")
-    results.append(
-        ("Claude Code 会话结束钩子", session_end_ok, "已接线" if session_end_ok else "hooks.SessionEnd 未接线，退出标记只能靠哨兵")
-    )
+    claude_dir = HOME / ".claude"
+    claude_path = claude_dir / "settings.json"
+    if not claude_dir.is_dir():
+        results.append(("Claude Code 采集钩子", True, "未安装，跳过"))
+        results.append(("Claude Code 会话结束钩子", True, "未安装，跳过"))
+    else:
+        claude_text = _read_text(claude_path)
+        claude_ok = HOOK_MARKER in claude_text and HOOK_SCRIPT.as_posix() in claude_text
+        results.append(("Claude Code 采集钩子", claude_ok, str(claude_path) if claude_ok else f"路径须为 {HOOK_SCRIPT.as_posix()}"))
+        session_end_ok = claude_ok and _json_has_hook(claude_text, "SessionEnd")
+        results.append(
+            ("Claude Code 会话结束钩子", session_end_ok, "已接线" if session_end_ok else "hooks.SessionEnd 未接线，退出标记只能靠哨兵")
+        )
 
     # Codex 0.156 起钩子在 hooks.json 里；config.toml 只对旧版本有效，两种落点都认。
-    codex_hooks_path = HOME / ".codex" / "hooks.json"
-    codex_landing = codex_hooks_path if codex_hooks_path.exists() else HOME / ".codex" / "config.toml"
-    codex_text = _read_text(codex_landing)
-    codex_ok = HOOK_MARKER in codex_text and HOOK_SCRIPT.as_posix() in codex_text
-    results.append(("Codex 采集钩子", codex_ok, str(codex_landing) if codex_ok else f"路径须为 {HOOK_SCRIPT.as_posix()}"))
+    codex_dir = HOME / ".codex"
+    if not codex_dir.is_dir():
+        results.append(("Codex 采集钩子", True, "未安装，跳过"))
+    else:
+        codex_hooks_path = codex_dir / "hooks.json"
+        codex_landing = codex_hooks_path if codex_hooks_path.exists() else codex_dir / "config.toml"
+        codex_text = _read_text(codex_landing)
+        codex_ok = HOOK_MARKER in codex_text and HOOK_SCRIPT.as_posix() in codex_text
+        results.append(("Codex 采集钩子", codex_ok, str(codex_landing) if codex_ok else f"路径须为 {HOOK_SCRIPT.as_posix()}"))
 
-    preset_dir = HOME / ".dsh" / ".agent-presets" / "liangshen"
-    presets = sorted(path.name for path in (HOME / ".dsh" / ".agent-presets").glob("*")) if (HOME / ".dsh" / ".agent-presets").is_dir() else []
-    dsh_ok = any(
-        (HOME / ".dsh" / ".agent-presets" / name / "experience-keeper.mjs").exists()
-        and "experience-keeper" in _read_text(HOME / ".dsh" / ".agent-presets" / name / "agent.cordis.yml")
-        for name in presets
-    )
-    results.append(("dsh 采集插件", dsh_ok, "预设目录 " + (", ".join(presets) if presets else "未发现")))
-    # 预设目录由 dsh-tui 托管，升级会重写 agent.cordis.yml；适配器副本也可能落后于 skill 里的真身。
-    # 逐字节比对才看得出「装了但过期」，否则改了适配器却以为已生效。
-    installed = preset_dir / "experience-keeper.mjs"
-    source = SKILL_DIR / "adapters" / "dsh" / "experience-keeper.mjs"
-    dsh_fresh = installed.exists() and source.exists() and installed.read_bytes() == source.read_bytes()
-    results.append(
-        (
-            "dsh 适配器为当前版本",
-            dsh_fresh,
-            "副本与 skill 真身逐字节一致" if dsh_fresh else f"副本过期或缺席，重跑 install.py --client dsh --apply（{installed}）",
+    presets_root = HOME / ".dsh" / ".agent-presets"
+    preset_dir = presets_root / "liangshen"
+    presets = sorted(path.name for path in presets_root.glob("*")) if presets_root.is_dir() else []
+    if not presets_root.is_dir():
+        # dsh 没装就没有预设目录：不算接线缺口，否则纯 Codex 用户的自检永远是红的。
+        results.append(("dsh 采集插件", True, "未安装，跳过"))
+        results.append(("dsh 适配器为当前版本", True, "未安装，跳过"))
+    else:
+        dsh_ok = any(
+            (presets_root / name / "experience-keeper.mjs").exists()
+            and "experience-keeper" in _read_text(presets_root / name / "agent.cordis.yml")
+            for name in presets
         )
-    )
+        results.append(("dsh 采集插件", dsh_ok, "预设目录 " + (", ".join(presets) if presets else "未发现")))
+        # 预设目录由 dsh-tui 托管，升级会重写 agent.cordis.yml；适配器副本也可能落后于 skill 里的真身。
+        # 逐字节比对才看得出「装了但过期」，否则改了适配器却以为已生效。
+        installed = preset_dir / "experience-keeper.mjs"
+        source = SKILL_DIR / "adapters" / "dsh" / "experience-keeper.mjs"
+        dsh_fresh = installed.exists() and source.exists() and installed.read_bytes() == source.read_bytes()
+        results.append(
+            (
+                "dsh 适配器为当前版本",
+                dsh_fresh,
+                "副本与 skill 真身逐字节一致" if dsh_fresh else f"副本过期或缺席，重跑 install.py --client dsh --apply（{installed}）",
+            )
+        )
 
-    pi_settings = _read_text(HOME / ".pi" / "agent" / "settings.json")
+    pi_dir = HOME / ".pi"
     pi_path = (SKILL_DIR / "adapters" / "pi" / "experience-keeper.ts").as_posix()
-    pi_ok = pi_path in pi_settings
-    results.append(("pi 扩展注册", pi_ok, pi_path if pi_ok else "扩展路径须指向全局 skill 目录"))
+    if not pi_dir.is_dir():
+        results.append(("pi 扩展注册", True, "未安装，跳过"))
+    else:
+        pi_settings = _read_text(pi_dir / "agent" / "settings.json")
+        pi_ok = pi_path in pi_settings
+        results.append(("pi 扩展注册", pi_ok, pi_path if pi_ok else "扩展路径须指向全局 skill 目录"))
 
-    codemaker_text = _read_text(HOME / ".config" / "codemaker" / "codemaker.json")
+    codemaker_dir = HOME / ".config" / "codemaker"
     codemaker_path = (SKILL_DIR / "adapters" / "codemaker").as_posix()
-    codemaker_ok = codemaker_path in codemaker_text
-    results.append(("codemaker 插件注册", codemaker_ok, codemaker_path if codemaker_ok else "插件路径须指向全局 skill 目录"))
+    if not codemaker_dir.is_dir():
+        results.append(("codemaker 插件注册", True, "未安装，跳过"))
+    else:
+        codemaker_text = _read_text(codemaker_dir / "codemaker.json")
+        codemaker_ok = codemaker_path in codemaker_text
+        results.append(("codemaker 插件注册", codemaker_ok, codemaker_path if codemaker_ok else "插件路径须指向全局 skill 目录"))
 
     store = HOME / ".agents" / "experience"
     writable = store.exists() and os.access(store, os.W_OK)

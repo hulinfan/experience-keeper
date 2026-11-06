@@ -3893,6 +3893,30 @@ class InstallUpgradeTest(BaseCase):
             self.assertIn(install.HOOK_SCRIPT.as_posix(), commands[0])
             self.assertEqual(commands[0].count('"'), 2, "脚本路径要带引号，用户名带空格也能跑")
 
+    def test_check_passes_on_machine_without_clients(self) -> None:
+        """全新空机器：没装任何客户端时自检不该报红，否则用户永远看不到「全部接线就绪」。"""
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            target = root / ".agents" / "AGENTS.md"
+            with mock.patch.object(install, "HOME", root), \
+                    mock.patch.object(install, "AGENTS_GLOBAL", target), \
+                    redirect_stdout(io.StringIO()):
+                install.install_shared(install.Installer(apply=True))
+                items = {name: (ok, detail) for name, ok, detail in install.check_wiring()}
+            for name in (
+                "Claude Code 采集钩子",
+                "Claude Code 会话结束钩子",
+                "Codex 采集钩子",
+                "dsh 采集插件",
+                "dsh 适配器为当前版本",
+                "pi 扩展注册",
+                "codemaker 插件注册",
+            ):
+                with self.subTest(item=name):
+                    ok, detail = items[name]
+                    self.assertTrue(ok, f"{name} 不该报红：{detail}")
+                    self.assertIn("未安装", detail)
+
     def test_upsert_hook_appends_then_replaces(self) -> None:
         entries: list = []
         self.assertEqual(install.upsert_hook(entries, f"{self.OLD} --client claude"), "appended")
