@@ -41,24 +41,54 @@ flowchart LR
 ## 安装
 
 前提：Python 3.10+、git，且要接线的客户端已装好并至少启动过一次（各端配置目录存在才会接钩子）。
+Windows 下面用 `python`，macOS / Linux 用 `python3`。
 
 ```bash
 git clone https://github.com/hulinfan/experience-keeper.git ~/.agents/skills/experience-keeper
 cd ~/.agents/skills/experience-keeper
-python scripts/install.py --check    # 先看缺什么，不写任何文件
+python scripts/install.py --check    # 先看缺什么，不写任何文件（有缺失时退出码 1；未安装的客户端按跳过处理）
 python scripts/install.py --apply    # 写入接线（改动前自动备份）
-python scripts/install.py --check    # 复查：应输出「全部接线就绪。」
+python scripts/install.py --check    # 复查：应输出「全部接线就绪。」（退出码 0）
 python scripts/experience.py gate    # 首跑：应输出「无待复盘候选，不派发。」
 ```
 
-`--apply` 一次性完成：全局规则 `~/.agents/AGENTS.md` 的「## 经验库」索引段（文件不存在会建）、
-五端规则文件链接、Claude Code / Codex 采集钩子、dsh 预设插件、pi 扩展与 codemaker 插件注册，
-并建出数据目录 `~/.agents/experience/`。客户端没装或配置缺失时跳过该端并继续，不会中断其余接线。
+`--apply` 一次性完成五件事：全局规则 `~/.agents/AGENTS.md` 的「## 经验库」索引段（文件不存在会建出来）、
+五端规则文件链接（`.codex/AGENTS.md`、`.claude/CLAUDE.md`、`.dsh/AGENTS.md`、`.pi/agent/AGENTS.md`、`.config/codemaker/AGENTS.md`）、
+Claude Code（`hooks.Stop` + `hooks.SessionEnd`）与 Codex 采集钩子、dsh 预设插件与 pi / codemaker 插件注册，
+以及数据目录 `~/.agents/experience/`。客户端没装或配置缺失时跳过该端并继续，不会中断其余接线。
 
-只装其中一端：`python scripts/install.py --client codex --apply`。skill 必须放在 `~/.agents/skills/experience-keeper`
-且是实体目录（链接会让自检报「本脚本不在全局目录里运行」）。
+只装其中一端：`python scripts/install.py --client codex --apply`（可选值 `claude` `codex` `pi` `dsh` `codemaker` `all`）。
 
 要求 Python 3.10+，无第三方运行时依赖；开发与测试另需 `pytest`、`PyYAML`。
+
+### 装好之后会怎样
+
+不需要额外初始化：会话正常结束就由钩子落候选，下次开场 `gate` 自动派发一次复盘。
+
+```text
+$ python scripts/experience.py gate
+经验库闸门：待复盘候选 1 条…后台派发复盘 Agent，brief 原样转发：
+$ python scripts/experience.py review
+另有项目存在积压：my-service 1 条。用 review --all 查看。
+```
+
+## 常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `本脚本不在全局目录里运行` | skill 没放在 `~/.agents/skills/experience-keeper`，或以链接形式存在；改成实体克隆 |
+| `未发现配置，跳过` | 该客户端还没启动过或配置不存在；先启动一次客户端再跑 `--apply` |
+| 某个客户端接线失败 | 单端异常只报错不中断其余端，末尾会提示 `--client <名称> --apply` 重试 |
+| Codex 提示「新钩子首次运行需确认信任」 | 正常行为，按提示确认一次 |
+| 用户名或安装路径带空格 | 钩子命令里的脚本路径已加引号，可直接用 |
+| Windows 配置带 UTF-8 BOM | 已兼容（读配置时剥 BOM），不用手工改文件 |
+| 自检报 `[缺失] 索引段为当前版本` | `~/.agents/AGENTS.md` 里是旧版索引段；重跑 `install.py --apply` 会原地替换 |
+| 想换安装位置 | 整体搬到 `~/.agents/skills/experience-keeper` 后再跑一次 `--apply`，旧路径的钩子会被替换而不是追加 |
+
+### 升级与卸载
+
+- 升级：`git -C ~/.agents/skills/experience-keeper pull` 后重跑 `install.py --apply`（配置改动前自动备份为 `*.bak-时间戳`）。
+- 卸载：删掉 `~/.agents/skills/experience-keeper`，再把各端配置里的 `experience-keeper` 钩子/插件行与 `~/.agents/AGENTS.md` 的「## 经验库」段删除；经验数据在 `~/.agents/experience/`，按需保留或删除。
 
 ## 常用命令
 
@@ -93,7 +123,7 @@ experience-keeper/
 ├── adapters/                # dsh / pi / codemaker 插件
 ├── docs/                    # 设计文档、解析契约、部署说明
 ├── schema/                  # 候选与条目写入契约
-└── tests/                   # 322 个用例，含真实轮次回归样本
+└── tests/                   # 用例与真实轮次回归样本
 ```
 
 ## 隐私与边界
